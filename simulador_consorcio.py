@@ -11,7 +11,7 @@ def formatar_percentual(valor):
 
 def highlight_contemplacao(row):
     if row["Número da parcela"] == prazo_contemplacao:
-        return ['border: 2px solid #00b050; color: #00b050; background-color: #1a1a1a'] * len(row)
+        return ['border: 2px solid #00b050; color: black; background-color: lightgreen'] * len(row)
     elif row["Número da parcela"] == "Total":
         return ['background-color: lightgray; color: black'] * len(row)
     else:
@@ -33,23 +33,25 @@ with col1:
     taxa_adm = st.number_input("Taxa de administração (%)", min_value=0.0, step=0.1, format="%.2f") / 100
     seguro_prestamista = st.number_input("Seguro prestamista (%)", min_value=0.0, step=0.0001, format="%.5f") / 100
     fundo_reserva = st.number_input("Fundo de reserva (%)", min_value=0.0, step=0.1, format="%.2f") / 100
-    tipo_estrategia = st.selectbox("Tipo de estratégia", ["Tradicional", "Alavancagem"])
+    taxa_antecipacao = st.number_input("Taxa de antecipação (%)", min_value=0.0, step=0.1, format="%.2f") / 100
+    lance_proprio = st.number_input("Lance com recursos próprios (R$)", min_value=0.0, step=100.0, format="%.2f")
+    opcao_lance = st.selectbox("Utilização do lance", ["Reduzir Parcela", "Reduzir Prazo"])
 
 with col2:
     prazo_meses = st.number_input("Prazo total (meses)", min_value=1, step=1)
-    prazo_contemplacao = st.number_input("Prazo de contemplação (meses)", min_value=0, max_value=prazo_meses, step=1)
-    tipo_consorcio = st.selectbox("Tipo de consórcio", ["Imóvel", "Veículo"])
-
-lance_proprio = st.number_input("Lance com recursos próprios (R$)", min_value=0.0, step=100.0, format="%.2f")
-opcao_lance = st.selectbox("Utilização do lance", ["Reduzir Parcela", "Reduzir Prazo"])
-
-if tipo_estrategia == "Alavancagem":
-    tipo_investimento = st.selectbox("Tipo de investimento", ["Prefixado", "Inflação", "Pós-fixado (% CDI)"])
-    if tipo_investimento in ["Prefixado", "Inflação"]:
-        taxa_juros = st.number_input("Taxa de juros anual (%)", min_value=0.0, step=0.1, format="%.2f") / 100
-    else:
-        perc_cdi = st.number_input("% do CDI", min_value=0.0, step=1.0, format="%.2f") / 100
-        cdi_estimado = st.number_input("CDI estimado ao ano (%)", min_value=0.0, step=0.1, format="%.2f") / 100
+    prazo_contemplacao = st.number_input("Expectativa de contemplação (meses)", min_value=0, max_value=prazo_meses, step=1)
+    tipo_consorcio = st.selectbox("Tipo de consórcio", ["Imóvel", "Veículo", "Serviços"])
+    #tem_upgrade = st.checkbox("Simulação com upgrade?")
+    #if tem_upgrade:
+    #    upgrade = st.number_input("Upgrade (%)", min_value=0.0, max_value=100.0, step=1.0, format="%.1f") / 100
+    tipo_estrategia = st.selectbox("Tipo de estratégia", ["Tradicional", "Alavancagem"])
+    if tipo_estrategia == "Alavancagem":
+        tipo_investimento = st.selectbox("Tipo de investimento", ["Prefixado", "Inflação", "Pós-fixado (% CDI)"])
+        if tipo_investimento in ["Prefixado", "Inflação"]:
+            taxa_juros = st.number_input("Taxa de juros anual (%)", min_value=0.0, step=0.1, format="%.2f") / 100
+        else:
+            perc_cdi = st.number_input("% do CDI", min_value=0.0, step=1.0, format="%.2f") / 100
+            cdi_estimado = st.number_input("CDI estimado ao ano (%)", min_value=0.0, step=0.1, format="%.2f") / 100
 
 if st.button("Simular"):
     prazo_anos = prazo_meses / 12
@@ -61,7 +63,7 @@ if st.button("Simular"):
     parcela_cheia = total_pagar / prazo_meses
 
     amortizacao_contemplacao = parcela_cheia * prazo_contemplacao
-    saldo_devedor = valor_credito - (amortizacao_contemplacao * (valor_credito / total_pagar))
+    saldo_devedor = total_pagar - amortizacao_contemplacao
     parcelas_restantes = prazo_meses - prazo_contemplacao
 
     anos_corrigidos = prazo_contemplacao // 12
@@ -98,6 +100,10 @@ if st.button("Simular"):
             else:
                 valor_parcela = nova_parcela
 
+        # aplicando taxa de antecipação na 1ª e 2ª parcela
+        if i in [1, 2]:
+            valor_parcela += taxa_antecipacao * valor_credito / 2
+
         anos_passados = (i - 1) // 12
         fator_correcao = (1 + indice_medio) ** anos_passados
         correcao = (valor_parcela * fator_correcao) - valor_parcela if anos_passados > 0 else 0.0
@@ -113,7 +119,9 @@ if st.button("Simular"):
 
         if i == prazo_contemplacao:
             saldo_restante_total = saldo_pos_lance
-            saldo_credor = max(valor_credito * ((1 + indice_medio) ** anos_corrigidos) - lance_proprio, 0)
+            #saldo_credor = max(valor_credito * ((1 + indice_medio) ** anos_corrigidos) - lance_proprio, 0)
+            saldo_credor_corrigido_na_contemplacao = saldo_credor * ((1 + indice_medio) ** anos_corrigidos)
+            saldo_credor = max(saldo_credor_corrigido_na_contemplacao - lance_proprio, 0)
             if saldo_restante_total <= 0:
                 saldo_restante_total = 0
 
@@ -158,7 +166,7 @@ if st.button("Simular"):
         if tipo_investimento == "Pós-fixado (% CDI)":
             taxa_bruta_aa = perc_cdi * cdi_estimado
         elif tipo_investimento == "Inflação":
-            taxa_bruta_aa = taxa_juros + 0.045
+            taxa_bruta_aa = (1 + taxa_juros) * (1 + 0.058) - 1
         else:
             taxa_bruta_aa = taxa_juros
 
@@ -182,8 +190,13 @@ if st.button("Simular"):
         montante_pos_resgate = montante_contemplacao - resgate_liquido - imposto_contemplacao
         meses_pos_contemplacao = prazo_meses - prazo_contemplacao
 
-        montante_final = montante_pos_resgate * (1 + taxa_mensal) ** meses_pos_contemplacao
-        rendimento_pos_resgate = montante_final - montante_pos_resgate
+        if montante_pos_resgate <= 0:
+            montante_final = 0
+            rendimento_pos_resgate = 0
+            montante_pos_resgate = 0
+        else:
+            montante_final = montante_pos_resgate * (1 + taxa_mensal) ** meses_pos_contemplacao
+            rendimento_pos_resgate = montante_final - montante_pos_resgate
 
         if meses_pos_contemplacao <= 6:
             ir_final = 0.225
@@ -200,11 +213,72 @@ if st.button("Simular"):
 
         resultado_liquido = rendimento_liquido_total - custo_real
 
+        # --- Cálculo da taxa de breakeven ---
         if resultado_liquido < 0:
-            taxa_mensal_breakeven = ((custo_total - valor_credito_corrigido + valor_investido_inicial) / valor_investido_inicial) ** (1 / prazo_meses) - 1
-            taxa_anual_breakeven = (1 + taxa_mensal_breakeven) ** 12 - 1
+            taxa_breakeven = 0.0001
+            while True:
+                taxa_mensal_breakeven = (1 + taxa_breakeven) ** (1 / 12) - 1
+
+                # Montante até a contemplação
+                montante_contemplacao_bk = valor_investido_inicial * (1 + taxa_mensal_breakeven) ** prazo_contemplacao
+                rendimento_contemplacao_bk = montante_contemplacao_bk - valor_investido_inicial
+
+                # IR contemplação
+                if prazo_contemplacao <= 6:
+                    ir_contemplacao_bk = 0.225
+                elif prazo_contemplacao <= 12:
+                    ir_contemplacao_bk = 0.20
+                elif prazo_contemplacao <= 24:
+                    ir_contemplacao_bk = 0.175
+                else:
+                    ir_contemplacao_bk = 0.15
+
+                imposto_contemplacao_bk = rendimento_contemplacao_bk * ir_contemplacao_bk
+                resgate_liquido_bk = lance_proprio
+
+                montante_pos_resgate_bk = montante_contemplacao_bk - resgate_liquido_bk - imposto_contemplacao_bk
+                meses_pos_contemplacao = prazo_meses - prazo_contemplacao
+
+                if montante_pos_resgate_bk <= 0:
+                    montante_final_bk = 0
+                    rendimento_pos_resgate_bk = 0
+                    montante_pos_resgate_bk = 0
+                else:
+                    montante_final_bk = montante_pos_resgate_bk * (1 + taxa_mensal_breakeven) ** meses_pos_contemplacao
+                    rendimento_pos_resgate_bk = montante_final_bk - montante_pos_resgate_bk
+
+                # IR final
+                if meses_pos_contemplacao <= 6:
+                    ir_final_bk = 0.225
+                elif meses_pos_contemplacao <= 12:
+                    ir_final_bk = 0.20
+                elif meses_pos_contemplacao <= 24:
+                    ir_final_bk = 0.175
+                else:
+                    ir_final_bk = 0.15
+
+                imposto_final_bk = rendimento_pos_resgate_bk * ir_final_bk
+
+                rendimento_liquido_total_bk = (rendimento_contemplacao_bk - imposto_contemplacao_bk) + (
+                            rendimento_pos_resgate_bk - imposto_final_bk)
+
+                resultado_liquido_bk = rendimento_liquido_total_bk - custo_real
+
+                if resultado_liquido_bk >= 0 or taxa_breakeven > 0.25:
+                    break
+                else:
+                    taxa_breakeven += 0.0001
+
+            taxa_anual_breakeven = taxa_breakeven
+
         else:
             taxa_anual_breakeven = None
+
+    try:
+        if taxa_anual_breakeven > 0.25:
+            taxa_anual_breakeven = "Superior a 25%"
+    except:
+        pass
 
     # --- Exibição dos Resultados ---
     st.subheader("📊 Resultado da simulação")
@@ -217,11 +291,11 @@ if st.button("Simular"):
         st.write(f"**Índice de correção:** {nome_indice} ({(indice_medio*100):.2f}% aa)".replace(".", ","))
         if not df_parcelas.empty and df_parcelas.loc[0, 'Total (R$)'] != "Total":
             st.write(f"**1ª parcela:** {formatar_moeda(df_parcelas.loc[0, 'Total (R$)'])}")
+            st.write(f"**Média das demais parcelas:** {formatar_moeda(df_parcelas.loc[2:len(df_parcelas)-2, 'Total (R$)'].mean())}")
         st.write(f"**CET a.a:** {formatar_percentual(cet_aa)} | **CET a.m:** {formatar_percentual(cet_am)}")
-        #st.write(f"**CET a.m:** {formatar_percentual(cet_am)}")
         st.write(f"**Crédito corrigido na contemplação:** {formatar_moeda(valor_credito_corrigido)}")
-        st.write(f"**Custo real:** {formatar_moeda(custo_real)}")
-        st.info("Custo real = Total pago em parcelas + lance - crédito recebido - fundo de reserva")
+        #st.write(f"**Custo real:** {formatar_moeda(custo_real)}")
+        #st.info("Custo real = Total pago em parcelas + lance - crédito recebido - fundo de reserva")
 
     with colB:
         if tipo_estrategia == "Alavancagem":
@@ -233,11 +307,16 @@ if st.button("Simular"):
             st.write(f"**Rendimento líquido total:** {formatar_moeda(rendimento_liquido_total)}")
             if resultado_liquido >= 0:
                 st.success(f"**Resultado da alavancagem:** {formatar_moeda(resultado_liquido)}")
-                st.info(f"Resultado = Rendimentos líquidos - Custo real") 
+                st.info(f"Resultado = Rendimentos líquidos + Crédito recebido - Total pago")
             else:
                 st.error(f"**Resultado da alavancagem:** {formatar_moeda(resultado_liquido)}")
                 if taxa_anual_breakeven is not None:
-                    st.info(f"**Taxa anual necessária para breakeven:** {formatar_percentual(taxa_anual_breakeven)}")
+                    if taxa_anual_breakeven == "Superior a 25%":
+                        st.info("Taxa anual necessária para breakeven é superior a 25% a.a.")
+                    elif tipo_investimento == "Inflação":
+                        st.info(f"**Taxa anual necessária para breakeven:** {formatar_percentual(taxa_anual_breakeven- 0.058)}")
+                    else:
+                            st.info(f"**Taxa anual necessária para breakeven:** {formatar_percentual(taxa_anual_breakeven)}")
 
     st.subheader("📋 Detalhamento das parcelas")
     for col in ["Saldo devedor (R$)", "Valor da parcela (R$)", "Seguro (R$)", "Correção monetária (R$)", "Total (R$)"]:
